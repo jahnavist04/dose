@@ -1,0 +1,4 @@
+mcp
+APScheduler
+pytest
+pytest-asyncio
