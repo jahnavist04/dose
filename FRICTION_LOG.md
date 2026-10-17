@@ -1,5 +1,1 @@
-# Friction log
-
-| Date | Task | What I expected | What happened | Severity | Workaround | Suggestion |
-|------|------|-----------------|---------------|----------|------------|------------|
-| 2026-10-12 | First Bedrock call (Nova Lite, image + prompt) in the playground | The model would answer | AccessDeniedException: "account is currently being verified", up to 2 hours | Medium | Did non-Bedrock work (drug table, test samples) while waiting | Show verification status on the Bedrock page before a user hits an error |
+| 2026-10-17 | Retry Nova Lite image extraction in the Bedrock playground | Model reads a handwritten prescription | Verification had cleared. All 3 medicines, strengths and 1-0-1 patterns read correctly in 696 ms, no invented medicines. Duration came back as "(30)" in two rows instead of "30 days" | Low | Normalize duration in code | Show account verification status in the console so users know when model access is ready |
