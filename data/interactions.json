@@ -1,0 +1,4 @@
+[
+  {"drugs": ["warfarin", "aspirin"], "severity": "", "note": "", "source": "", "verified": false},
+  {"drugs": ["warfarin", "ibuprofen"], "severity": "", "note": "", "source": "", "verified": false}
+]
