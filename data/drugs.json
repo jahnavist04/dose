@@ -1,0 +1,10 @@
+[
+  {"generic": "metformin", "brands": ["Glycomet", "Glucophage"], "verified": false},
+  {"generic": "amlodipine", "brands": ["Amlong", "Amlokind"], "verified": false},
+  {"generic": "losartan", "brands": ["Losar", "Repace"], "verified": false},
+  {"generic": "atorvastatin", "brands": ["Atorva"], "verified": false},
+  {"generic": "aspirin", "brands": ["Ecosprin"], "verified": false},
+  {"generic": "warfarin", "brands": [], "verified": false},
+  {"generic": "ibuprofen", "brands": ["Brufen", "Combiflam (also contains paracetamol)"], "verified": false},
+  {"generic": "clopidogrel", "brands": ["Clopilet", "Plavix"], "verified": false}
+]
