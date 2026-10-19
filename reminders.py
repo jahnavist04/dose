@@ -1,6 +1,11 @@
 
+import json
+import os
 import sqlite3
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
 from apscheduler.schedulers.background import BackgroundScheduler
 
 DB_NAME = "medications.db"
@@ -15,6 +20,39 @@ def get_db():
     conn = sqlite3.connect(DB_NAME, timeout=10)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def send_family_telegram_alert(message):
+    """Send a family alert using the configured Telegram bot."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+
+    if not token or not chat_id:
+        print("[TELEGRAM] Bot token or chat ID is missing.")
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = urlencode({
+        "chat_id": chat_id,
+        "text": message
+    }).encode("utf-8")
+
+    request = Request(url, data=data, method="POST")
+
+    try:
+        with urlopen(request, timeout=10) as response:
+            result = json.loads(response.read().decode("utf-8"))
+
+        if result.get("ok"):
+            print("[TELEGRAM] Family notification sent.")
+            return True
+
+        print("[TELEGRAM] Telegram rejected the notification.")
+        return False
+
+    except Exception as exc:
+        print(f"[TELEGRAM] Notification failed: {exc}")
+        return False
 
 
 def init_reminders():
@@ -57,13 +95,17 @@ def create_reminder(patient_id, prescription_id, scheduled_at):
             INSERT INTO reminders
             (patient_id, prescription_id, scheduled_at)
             VALUES (?, ?, ?)
-        """, (patient_id, prescription_id, scheduled_time.strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )))
+        """, (
+            patient_id,
+            prescription_id,
+            scheduled_time.strftime("%Y-%m-%d %H:%M:%S")
+        ))
+
+        reminder_id = cursor.lastrowid
 
     return {
         "success": True,
-        "reminder_id": cursor.lastrowid,
+        "reminder_id": reminder_id,
         "scheduled_at": scheduled_time.strftime("%Y-%m-%d %H:%M:%S")
     }
 
@@ -116,6 +158,9 @@ def respond_to_reminder(reminder_id, response):
 
 
 def record_no_response(reminder_id):
+    alert_message = None
+    retries = 0
+
     with get_db() as conn:
         reminder = conn.execute(
             "SELECT * FROM reminders WHERE id = ?",
@@ -134,44 +179,74 @@ def record_no_response(reminder_id):
         retries = reminder["retry_count"] + 1
 
         if retries >= MAX_RETRIES:
+            prescription = conn.execute("""
+                SELECT medicine FROM prescriptions
+                WHERE id = ?
+            """, (reminder["prescription_id"],)).fetchone()
+
+            medicine = (
+                prescription["medicine"]
+                if prescription else "Unknown medication"
+            )
+
             conn.execute("""
                 UPDATE reminders
-                SET retry_count = ?, status = 'family_alerted',
+                SET retry_count = ?,
+                    status = 'family_alerted',
                     family_alerted = 1
                 WHERE id = ?
             """, (retries, reminder_id))
 
+            alert_message = (
+                "MEDICATION ALERT\n\n"
+                "A patient has not responded to repeated medication "
+                "reminders.\n"
+                f"Patient ID: {reminder['patient_id']}\n"
+                f"Medicine: {medicine}\n"
+                f"Scheduled time: {reminder['scheduled_at']}\n"
+                "Please check on the patient."
+            )
+
+        else:
+            next_time = datetime.now() + timedelta(
+                minutes=RETRY_MINUTES
+            )
+
+            conn.execute("""
+                UPDATE reminders
+                SET retry_count = ?, scheduled_at = ?
+                WHERE id = ?
+            """, (
+                retries,
+                next_time.strftime("%Y-%m-%d %H:%M:%S"),
+                reminder_id
+            ))
+
             return {
-                "status": "family_alerted",
+                "status": "pending",
                 "retry_count": retries,
-                "message": (
-                    "Family alert recorded; no actual notification sent."
+                "next_reminder_at": next_time.strftime(
+                    "%Y-%m-%d %H:%M:%S"
                 )
             }
 
-        next_time = datetime.now() + timedelta(
-            minutes=RETRY_MINUTES
-        )
-
-        conn.execute("""
-            UPDATE reminders
-            SET retry_count = ?, scheduled_at = ?
-            WHERE id = ?
-        """, (
-            retries,
-            next_time.strftime("%Y-%m-%d %H:%M:%S"),
-            reminder_id
-        ))
+    # Send the alert after the database transaction has completed.
+    sent = send_family_telegram_alert(alert_message)
 
     return {
-        "status": "pending",
+        "status": "family_alerted",
         "retry_count": retries,
-        "next_reminder_at": next_time.strftime("%Y-%m-%d %H:%M:%S")
+        "notification_sent": sent,
+        "message": (
+            "Family notification sent via Telegram."
+            if sent else
+            "Family alert recorded, but Telegram notification failed."
+        )
     }
 
 
 def process_due_reminders():
-    """Process due reminders and record escalation after repeated silence."""
+    """Process due reminders and escalate after repeated silence."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     with get_db() as conn:
