@@ -2,3 +2,4 @@ mcp
 APScheduler
 pytest
 pytest-asyncio
+python-telegram-bot>=21,<23
